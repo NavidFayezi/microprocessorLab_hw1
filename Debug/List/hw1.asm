@@ -1084,6 +1084,13 @@ __DELAY_USW_LOOP:
 	ADD  R31,R0
 	.ENDM
 
+;NAME DEFINITIONS FOR GLOBAL VARIABLES ALLOCATED TO REGISTERS
+	.DEF _number=R4
+	.DEF _number_msb=R5
+	.DEF __lcd_x=R7
+	.DEF __lcd_y=R6
+	.DEF __lcd_maxx=R9
+
 	.CSEG
 	.ORG 0x00
 
@@ -1112,6 +1119,36 @@ __START_OF_CODE:
 	JMP  0x00
 	JMP  0x00
 	JMP  0x00
+
+;GLOBAL REGISTER VARIABLES INITIALIZATION
+__REG_VARS:
+	.DB  0x0,0x0
+
+_0x2000003:
+	.DB  0x80,0xC0
+_0x2020060:
+	.DB  0x1
+_0x2020000:
+	.DB  0x2D,0x4E,0x41,0x4E,0x0,0x49,0x4E,0x46
+	.DB  0x0
+
+__GLOBAL_INI_TBL:
+	.DW  0x02
+	.DW  0x04
+	.DW  __REG_VARS*2
+
+	.DW  0x02
+	.DW  __base_y_G100
+	.DW  _0x2000003*2
+
+	.DW  0x01
+	.DW  __seed_G101
+	.DW  _0x2020060*2
+
+_0xFFFFFFFF:
+	.DW  0
+
+#define __GLOBAL_INI_TBL_PRESENT 1
 
 __RESET:
 	CLI
@@ -1142,6 +1179,29 @@ __CLEAR_SRAM:
 	ST   X+,R30
 	SBIW R24,1
 	BRNE __CLEAR_SRAM
+
+;GLOBAL VARIABLES INITIALIZATION
+	LDI  R30,LOW(__GLOBAL_INI_TBL*2)
+	LDI  R31,HIGH(__GLOBAL_INI_TBL*2)
+__GLOBAL_INI_NEXT:
+	LPM  R24,Z+
+	LPM  R25,Z+
+	SBIW R24,0
+	BREQ __GLOBAL_INI_END
+	LPM  R26,Z+
+	LPM  R27,Z+
+	LPM  R0,Z+
+	LPM  R1,Z+
+	MOVW R22,R30
+	MOVW R30,R0
+__GLOBAL_INI_LOOP:
+	LPM  R0,Z+
+	ST   X+,R0
+	SBIW R24,1
+	BRNE __GLOBAL_INI_LOOP
+	MOVW R30,R22
+	RJMP __GLOBAL_INI_NEXT
+__GLOBAL_INI_END:
 
 ;HARDWARE STACK POINTER INITIALIZATION
 	LDI  R30,LOW(__SRAM_END-__HEAP_SIZE)
@@ -1177,71 +1237,432 @@ __CLEAR_SRAM:
 	.SET power_ctrl_reg=mcucr
 	#endif
 ;#include <mega32.h>
+;#include <alcd.h>
+;#include <stdlib.h>
+;
+;int number = 0;
 ;
 ;void main(void)
-; 0000 0007 {
+; 0000 000B {
 
 	.CSEG
 _main:
 ; .FSTART _main
-; 0000 0008 
-; 0000 0009     OCR1AH = 0x3D;
+; 0000 000C 
+; 0000 000D 
+; 0000 000E     lcd_init(16);
+	LDI  R26,LOW(16)
+	RCALL _lcd_init
+; 0000 000F     lcd_clear();                                    // lcd initial settings
+	RCALL _lcd_clear
+; 0000 0010 
+; 0000 0011 
+; 0000 0012     OCR1AH = 0x3D;
 	LDI  R30,LOW(61)
 	OUT  0x2B,R30
-; 0000 000A     OCR1AL = 0x09;                                  // OCR1 = ox3D09 = 15625 --> 15625 * 64 / 1000000 = 1 second
+; 0000 0013     OCR1AL = 0x09;                                  // OCR1A = ox3D09 = 15625 --> 15625 * 64 / 1000000 = 1 second
 	LDI  R30,LOW(9)
 	OUT  0x2A,R30
-; 0000 000B 
-; 0000 000C     #asm("sei");                                    // globally enable interrupts
+; 0000 0014 
+; 0000 0015     #asm("sei");                                    // globally enable interrupts
 	sei
-; 0000 000D     TIMSK |= (1 << TOIE1) | (1 << OCIE1A) ;         // enable timer/counter 1 interrupt and timer/counter 1 compare matc ...
+; 0000 0016     TIMSK |= (1 << TOIE1) | (1 << OCIE1A) ;         // enable timer/counter 1 interrupt and timer/counter 1 compare matc ...
 	IN   R30,0x39
 	ORI  R30,LOW(0x14)
 	OUT  0x39,R30
-; 0000 000E 
-; 0000 000F     TCCR1B = 0x0B;                                  // f(t/c) = f(IO) / 64 from prescaler || enable CTC mode and set TOP ...
+; 0000 0017 
+; 0000 0018     TCCR1B = 0x0B;                                  // f(t/c) = f(IO) / 64 from prescaler || enable CTC mode and set TOP ...
 	LDI  R30,LOW(11)
 	OUT  0x2E,R30
-; 0000 0010 
-; 0000 0011 
-; 0000 0012 
-; 0000 0013 
-; 0000 0014     DDRA = 0xff;
-	LDI  R30,LOW(255)
-	OUT  0x1A,R30
-; 0000 0015     PORTA = 0xff;
-	OUT  0x1B,R30
-; 0000 0016 }
+; 0000 0019 
+; 0000 001A 
+; 0000 001B 
+; 0000 001C 
+; 0000 001D 
+; 0000 001E }
 _0x3:
 	RJMP _0x3
 ; .FEND
 ;
 ;
-;interrupt[TIM1_COMPA] void comparematch(void){
-; 0000 0019 interrupt[8] void comparematch(void){
+;interrupt[TIM1_COMPA] void comparematch(void){     // interrupt happens every second
+; 0000 0021 interrupt[8] void comparematch(void){
 _comparematch:
 ; .FSTART _comparematch
+	ST   -Y,R0
+	ST   -Y,R1
+	ST   -Y,R15
+	ST   -Y,R22
+	ST   -Y,R23
+	ST   -Y,R24
+	ST   -Y,R25
+	ST   -Y,R26
+	ST   -Y,R27
 	ST   -Y,R30
+	ST   -Y,R31
 	IN   R30,SREG
 	ST   -Y,R30
-; 0000 001A 
-; 0000 001B     // interrupt happens every second
-; 0000 001C       PORTA = ~PORTA;
-	IN   R30,0x1B
-	COM  R30
-	OUT  0x1B,R30
-; 0000 001D }
+; 0000 0022 
+; 0000 0023 
+; 0000 0024     char number_string[10];
+; 0000 0025 
+; 0000 0026     itoa(number,number_string);                     // convert integer(number) to string(number_string)
+	SBIW R28,10
+;	number_string -> Y+0
+	ST   -Y,R5
+	ST   -Y,R4
+	MOVW R26,R28
+	ADIW R26,2
+	CALL _itoa
+; 0000 0027 
+; 0000 0028     lcd_clear();
+	RCALL _lcd_clear
+; 0000 0029     lcd_puts(number_string);
+	MOVW R26,R28
+	RCALL _lcd_puts
+; 0000 002A 
+; 0000 002B     number = (number + 1) % 1001;
+	MOVW R26,R4
+	ADIW R26,1
+	LDI  R30,LOW(1001)
+	LDI  R31,HIGH(1001)
+	CALL __MODW21
+	MOVW R4,R30
+; 0000 002C 
+; 0000 002D }
+	ADIW R28,10
 	LD   R30,Y+
 	OUT  SREG,R30
+	LD   R31,Y+
 	LD   R30,Y+
+	LD   R27,Y+
+	LD   R26,Y+
+	LD   R25,Y+
+	LD   R24,Y+
+	LD   R23,Y+
+	LD   R22,Y+
+	LD   R15,Y+
+	LD   R1,Y+
+	LD   R0,Y+
 	RETI
 ; .FEND
 ;
 ;
 ;
+	#ifndef __SLEEP_DEFINED__
+	#define __SLEEP_DEFINED__
+	.EQU __se_bit=0x80
+	.EQU __sm_mask=0x70
+	.EQU __sm_powerdown=0x20
+	.EQU __sm_powersave=0x30
+	.EQU __sm_standby=0x60
+	.EQU __sm_ext_standby=0x70
+	.EQU __sm_adc_noise_red=0x10
+	.SET power_ctrl_reg=mcucr
+	#endif
+
+	.DSEG
+
+	.CSEG
+__lcd_write_nibble_G100:
+; .FSTART __lcd_write_nibble_G100
+	ST   -Y,R26
+	IN   R30,0x1B
+	ANDI R30,LOW(0xF)
+	MOV  R26,R30
+	LD   R30,Y
+	ANDI R30,LOW(0xF0)
+	OR   R30,R26
+	OUT  0x1B,R30
+	__DELAY_USB 2
+	SBI  0x1B,2
+	__DELAY_USB 2
+	CBI  0x1B,2
+	__DELAY_USB 2
+	RJMP _0x20A0001
+; .FEND
+__lcd_write_data:
+; .FSTART __lcd_write_data
+	ST   -Y,R26
+	LD   R26,Y
+	RCALL __lcd_write_nibble_G100
+    ld    r30,y
+    swap  r30
+    st    y,r30
+	LD   R26,Y
+	RCALL __lcd_write_nibble_G100
+	__DELAY_USB 17
+	RJMP _0x20A0001
+; .FEND
+_lcd_gotoxy:
+; .FSTART _lcd_gotoxy
+	ST   -Y,R26
+	LD   R30,Y
+	LDI  R31,0
+	SUBI R30,LOW(-__base_y_G100)
+	SBCI R31,HIGH(-__base_y_G100)
+	LD   R30,Z
+	LDD  R26,Y+1
+	ADD  R26,R30
+	RCALL __lcd_write_data
+	LDD  R7,Y+1
+	LDD  R6,Y+0
+	ADIW R28,2
+	RET
+; .FEND
+_lcd_clear:
+; .FSTART _lcd_clear
+	LDI  R26,LOW(2)
+	CALL SUBOPT_0x0
+	LDI  R26,LOW(12)
+	RCALL __lcd_write_data
+	LDI  R26,LOW(1)
+	CALL SUBOPT_0x0
+	LDI  R30,LOW(0)
+	MOV  R6,R30
+	MOV  R7,R30
+	RET
+; .FEND
+_lcd_putchar:
+; .FSTART _lcd_putchar
+	ST   -Y,R26
+	LD   R26,Y
+	CPI  R26,LOW(0xA)
+	BREQ _0x2000005
+	CP   R7,R9
+	BRLO _0x2000004
+_0x2000005:
+	LDI  R30,LOW(0)
+	ST   -Y,R30
+	INC  R6
+	MOV  R26,R6
+	RCALL _lcd_gotoxy
+	LD   R26,Y
+	CPI  R26,LOW(0xA)
+	BRNE _0x2000007
+	RJMP _0x20A0001
+_0x2000007:
+_0x2000004:
+	INC  R7
+	SBI  0x1B,0
+	LD   R26,Y
+	RCALL __lcd_write_data
+	CBI  0x1B,0
+	RJMP _0x20A0001
+; .FEND
+_lcd_puts:
+; .FSTART _lcd_puts
+	ST   -Y,R27
+	ST   -Y,R26
+	ST   -Y,R17
+_0x2000008:
+	LDD  R26,Y+1
+	LDD  R27,Y+1+1
+	LD   R30,X+
+	STD  Y+1,R26
+	STD  Y+1+1,R27
+	MOV  R17,R30
+	CPI  R30,0
+	BREQ _0x200000A
+	MOV  R26,R17
+	RCALL _lcd_putchar
+	RJMP _0x2000008
+_0x200000A:
+	LDD  R17,Y+0
+	ADIW R28,3
+	RET
+; .FEND
+_lcd_init:
+; .FSTART _lcd_init
+	ST   -Y,R26
+	IN   R30,0x1A
+	ORI  R30,LOW(0xF0)
+	OUT  0x1A,R30
+	SBI  0x1A,2
+	SBI  0x1A,0
+	SBI  0x1A,1
+	CBI  0x1B,2
+	CBI  0x1B,0
+	CBI  0x1B,1
+	LDD  R9,Y+0
+	LD   R30,Y
+	SUBI R30,-LOW(128)
+	__PUTB1MN __base_y_G100,2
+	LD   R30,Y
+	SUBI R30,-LOW(192)
+	__PUTB1MN __base_y_G100,3
+	LDI  R26,LOW(20)
+	LDI  R27,0
+	CALL _delay_ms
+	CALL SUBOPT_0x1
+	CALL SUBOPT_0x1
+	CALL SUBOPT_0x1
+	LDI  R26,LOW(32)
+	RCALL __lcd_write_nibble_G100
+	__DELAY_USB 33
+	LDI  R26,LOW(40)
+	RCALL __lcd_write_data
+	LDI  R26,LOW(4)
+	RCALL __lcd_write_data
+	LDI  R26,LOW(133)
+	RCALL __lcd_write_data
+	LDI  R26,LOW(6)
+	RCALL __lcd_write_data
+	RCALL _lcd_clear
+_0x20A0001:
+	ADIW R28,1
+	RET
+; .FEND
+
+	.CSEG
+_itoa:
+; .FSTART _itoa
+	ST   -Y,R27
+	ST   -Y,R26
+    ld   r26,y+
+    ld   r27,y+
+    ld   r30,y+
+    ld   r31,y+
+    adiw r30,0
+    brpl __itoa0
+    com  r30
+    com  r31
+    adiw r30,1
+    ldi  r22,'-'
+    st   x+,r22
+__itoa0:
+    clt
+    ldi  r24,low(10000)
+    ldi  r25,high(10000)
+    rcall __itoa1
+    ldi  r24,low(1000)
+    ldi  r25,high(1000)
+    rcall __itoa1
+    ldi  r24,100
+    clr  r25
+    rcall __itoa1
+    ldi  r24,10
+    rcall __itoa1
+    mov  r22,r30
+    rcall __itoa5
+    clr  r22
+    st   x,r22
+    ret
+
+__itoa1:
+    clr	 r22
+__itoa2:
+    cp   r30,r24
+    cpc  r31,r25
+    brlo __itoa3
+    inc  r22
+    sub  r30,r24
+    sbc  r31,r25
+    brne __itoa2
+__itoa3:
+    tst  r22
+    brne __itoa4
+    brts __itoa5
+    ret
+__itoa4:
+    set
+__itoa5:
+    subi r22,-0x30
+    st   x+,r22
+    ret
+; .FEND
+
+	.DSEG
 
 	.CSEG
 
 	.CSEG
+
+	.CSEG
+
+	.CSEG
+
+	.DSEG
+__base_y_G100:
+	.BYTE 0x4
+__seed_G101:
+	.BYTE 0x4
+
+	.CSEG
+;OPTIMIZER ADDED SUBROUTINE, CALLED 2 TIMES, CODE SIZE REDUCTION:1 WORDS
+SUBOPT_0x0:
+	CALL __lcd_write_data
+	LDI  R26,LOW(3)
+	LDI  R27,0
+	JMP  _delay_ms
+
+;OPTIMIZER ADDED SUBROUTINE, CALLED 3 TIMES, CODE SIZE REDUCTION:5 WORDS
+SUBOPT_0x1:
+	LDI  R26,LOW(48)
+	CALL __lcd_write_nibble_G100
+	__DELAY_USB 33
+	RET
+
+
+	.CSEG
+_delay_ms:
+	adiw r26,0
+	breq __delay_ms1
+__delay_ms0:
+	__DELAY_USW 0xFA
+	wdr
+	sbiw r26,1
+	brne __delay_ms0
+__delay_ms1:
+	ret
+
+__ANEGW1:
+	NEG  R31
+	NEG  R30
+	SBCI R31,0
+	RET
+
+__DIVW21U:
+	CLR  R0
+	CLR  R1
+	LDI  R25,16
+__DIVW21U1:
+	LSL  R26
+	ROL  R27
+	ROL  R0
+	ROL  R1
+	SUB  R0,R30
+	SBC  R1,R31
+	BRCC __DIVW21U2
+	ADD  R0,R30
+	ADC  R1,R31
+	RJMP __DIVW21U3
+__DIVW21U2:
+	SBR  R26,1
+__DIVW21U3:
+	DEC  R25
+	BRNE __DIVW21U1
+	MOVW R30,R26
+	MOVW R26,R0
+	RET
+
+__MODW21:
+	CLT
+	SBRS R27,7
+	RJMP __MODW211
+	COM  R26
+	COM  R27
+	ADIW R26,1
+	SET
+__MODW211:
+	SBRC R31,7
+	RCALL __ANEGW1
+	RCALL __DIVW21U
+	MOVW R30,R26
+	BRTC __MODW212
+	RCALL __ANEGW1
+__MODW212:
+	RET
+
 ;END OF CODE MARKER
 __END_OF_CODE:

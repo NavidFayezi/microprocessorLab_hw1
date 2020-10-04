@@ -2,9 +2,18 @@
 
 #include <io.h>
 #include <mega32.h>
+#include <alcd.h>
+#include <stdlib.h>
+
+int number = 0;
 
 void main(void)
 {
+    
+
+    lcd_init(16);
+    lcd_clear();                                    // lcd initial settings
+   
     
     OCR1AH = 0x3D;
     OCR1AL = 0x09;                                  // OCR1A = ox3D09 = 15625 --> 15625 * 64 / 1000000 = 1 second 
@@ -17,15 +26,22 @@ void main(void)
    
                                       
     
-    DDRA = 0xff;
-    PORTA = 0xff;   
+    
 }
 
 
-interrupt[TIM1_COMPA] void comparematch(void){
+interrupt[TIM1_COMPA] void comparematch(void){     // interrupt happens every second
     
-    // interrupt happens every second
-      PORTA = ~PORTA;
+    
+    char number_string[10];
+    
+    itoa(number,number_string);                     // convert integer(number) to string(number_string)
+    
+    lcd_clear();
+    lcd_puts(number_string);
+    
+    number = (number + 1) % 1001;
+     
 }
 
 

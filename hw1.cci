@@ -1,5 +1,8 @@
-VERSION:3 SOURCE_TIMESTAMP:514501C9
+VERSION:3 SOURCE_TIMESTAMP:51450623
 NODE:I LEVEL:0 LINE:3 "D:\Micro\inc\io.h"
 NODE:I LEVEL:0 LINE:4 "D:\Micro\inc\mega32.h"
-NODE:F LEVEL:0 LINE:6 "main(void)"
-NODE:F LEVEL:0 LINE:25 "comparematch(void)"
+NODE:I LEVEL:0 LINE:5 "D:\Micro\inc\alcd.h"
+NODE:I LEVEL:0 LINE:6 "D:\Micro\inc\stdlib.h"
+NODE:V LEVEL:0 LINE:8 "number -> R4,R5"
+NODE:F LEVEL:0 LINE:10 "main(void)"
+NODE:F LEVEL:0 LINE:33 "comparematch(void)"
